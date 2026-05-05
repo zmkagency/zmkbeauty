@@ -1,0 +1,439 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum Role {
+  SUPERADMIN
+  STORE_ADMIN
+  EMPLOYEE
+  CUSTOMER
+}
+
+enum AppointmentStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+// ==========================================
+// CORE MODELS
+// ==========================================
+
+model Tenant {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  logo             String?
+  coverImage       String?
+  description      String?  @db.Text
+  shortDescription String?
+  address          String?
+  phone            String?
+  email            String?
+  city             String?
+  district         String?
+  latitude         Float?
+  longitude        Float?
+  workingHours     Json?    // { mon: { open: "09:00", close: "20:00" }, tue: {...}, ... }
+  socialLinks      Json?    // { instagram: "", facebook: "", twitter: "", website: "" }
+  themeColor       String?  @default("#e11d48") // Primary brand color
+  seoTitle         String?
+  seoDescription   String?  @db.Text
+  isActive         Boolean  @default(true)
+  subscriptionTier String   @default("starter") // starter, pro, enterprise
+  bufferMinutes    Int      @default(0) // Buffer between appointments
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  users        User[]
+  services     Service[]
+  employees    Employee[]
+  appointments Appointment[]
+  closures     StoreClosure[]
+  payments     Payment[]
+  auditLogs    AuditLog[]
+  reviews      Review[]
+  campaigns    Campaign[]
+  products     Product[]
+  equipment    Equipment[]
+
+  @@index([slug])
+  @@index([city])
+  @@index([isActive])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  phone        String?
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role      @default(CUSTOMER)
+  tenantId     String?
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  tenant              Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  appointments        Appointment[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  employee            Employee?
+  reviews             Review[]
+
+  @@index([email])
+  @@index([tenantId])
+  @@index([role])
+}
+
+model Employee {
+  id        String  @id @default(cuid())
+  userId    String? @unique
+  tenantId  String
+  firstName String
+  lastName  String
+  title     String? // e.g., "Kuaför Uzmanı", "Lazer Teknisyeni"
+  avatarUrl String?
+  bio       String? @db.Text
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedules    EmployeeSchedule[]
+  leaves       EmployeeLeave[]
+  services     EmployeeService[]
+  appointments Appointment[]
+
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model EmployeeSchedule {
+  id         String @id @default(cuid())
+  employeeId String
+  dayOfWeek  Int    // 0=Monday, 1=Tuesday, ..., 6=Sunday
+  startTime  String // "09:00"
+  endTime    String // "18:00"
+  breakStart String? // "12:00"
+  breakEnd   String? // "13:00"
+  isWorking  Boolean @default(true)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, dayOfWeek])
+  @@index([employeeId])
+}
+
+model EmployeeLeave {
+  id         String   @id @default(cuid())
+  employeeId String
+  startDate  DateTime
+  endDate    DateTime
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([startDate, endDate])
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  description String? @db.Text
+  duration    Int     // minutes
+  price       Decimal @db.Decimal(10, 2)
+  currency    String  @default("TRY")
+  category    String?
+  imageUrl    String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employees    EmployeeService[]
+  appointments Appointment[]
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([isActive])
+}
+
+model EmployeeService {
+  id         String @id @default(cuid())
+  employeeId String
+  serviceId  String
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, serviceId])
+}
+
+model StoreClosure {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      DateTime @db.Date
+  reason    String?
+  isFullDay Boolean  @default(true)
+  startTime String?  // If partial day closure
+  endTime   String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([date])
+  @@unique([tenantId, date])
+}
+
+model Appointment {
+  id         String            @id @default(cuid())
+  tenantId   String
+  customerId String
+  employeeId String
+  serviceId  String
+  date       DateTime          @db.Date
+  startTime  String            // "14:00"
+  endTime    String            // "14:45"
+  status     AppointmentStatus @default(PENDING_PAYMENT)
+  totalPrice Decimal           @db.Decimal(10, 2)
+  notes      String?           @db.Text
+  campaignId String?
+  discount   Decimal?          @db.Decimal(10, 2)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  // Relations
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer User     @relation(fields: [customerId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  service  Service  @relation(fields: [serviceId], references: [id])
+  payment  Payment?
+  review   Review?
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  equipment AppointmentEquipment[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+  @@index([tenantId, date])
+  @@index([employeeId, date])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  tenantId      String
+  appointmentId String        @unique
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String        @default("TRY")
+  status        PaymentStatus @default(PENDING)
+  paytrToken    String?
+  paytrOrderId  String?       @unique
+  paidAt        DateTime?
+  failedAt      DateTime?
+  refundedAt    DateTime?
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([paytrOrderId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  userId    String?
+  action    String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+  entity    String   // User, Tenant, Appointment, etc.
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ==========================================
+// ENTERPRISE & E-COMMERCE MODELS
+// ==========================================
+
+model Review {
+  id            String   @id @default(cuid())
+  tenantId      String
+  customerId    String
+  appointmentId String   @unique
+  rating        Int      // 1 to 5
+  comment       String?  @db.Text
+  tenantReply   String?  @db.Text
+  isApproved    Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([rating])
+}
+
+model Campaign {
+  id            String       @id @default(cuid())
+  tenantId      String
+  title         String
+  description   String?      @db.Text
+  code          String?      // e.g., SUMMER20 (Optional for auto-applied campaigns)
+  discountType  DiscountType @default(PERCENTAGE)
+  discountValue Decimal      @db.Decimal(10, 2)
+  startDate     DateTime
+  endDate       DateTime
+  minSpend      Decimal?     @db.Decimal(10, 2)
+  maxUsage      Int?         // Total global usage limit
+  usedCount     Int          @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([tenantId])
+  @@index([code])
+  @@index([isActive])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?  @db.Text
+  sku         String?
+  barcode     String?
+  price       Decimal  @db.Decimal(10, 2)
+  currency    String   @default("TRY")
+  stock       Int      @default(0)
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model Equipment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments AppointmentEquipment[]
+
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model AppointmentEquipment {
+  id            String @id @default(cuid())
+  appointmentId String
+  equipmentId   String
+
+  // Relations
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  equipment   Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, equipmentId])
+}

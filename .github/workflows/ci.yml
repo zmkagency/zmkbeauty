@@ -1,0 +1,45 @@
+name: ZBEAUTY CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+    - name: Build
+      run: npm run build
+
+    - name: Install Playwright Browsers
+      run: cd apps/web && npx playwright install --with-deps
+      if: matrix.node-version == '20.x'
+
+    - name: Run Backend Tests
+      run: cd apps/api && npm run test
+
+    # In a real environment, you might want to run E2E tests against a real DB
+    # - name: Run Frontend E2E Tests
+    #   run: cd apps/web && npm run test:e2e
+    #   if: matrix.node-version == '20.x'
