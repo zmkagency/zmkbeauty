@@ -38,7 +38,7 @@ yarn-error.log*
 apps/api/prisma/*.db
 
 # Uploads
-uploads/
+/uploads/
 
 # Auto-generated entries
 # Dependencies
