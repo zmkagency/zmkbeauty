@@ -260,6 +260,90 @@ export class PaymentsService {
         startTime: appointment.startTime,
       }).catch(() => {});
     }
+
+    // Platform commission collection
+    await this.collectCommission(payment, appointment);
+
+    // Award loyalty points to customer
+    await this.awardLoyaltyPoints(appointment);
+  }
+
+  private async awardLoyaltyPoints(appointment: any) {
+    try {
+      const amount = Number(appointment.totalPrice || appointment.service?.price || 0);
+      if (amount <= 0) return;
+
+      // Get or create loyalty account
+      const account = await this.prisma.loyaltyAccount.upsert({
+        where: { userId_tenantId: { userId: appointment.customerId, tenantId: appointment.tenantId } },
+        create: { userId: appointment.customerId, tenantId: appointment.tenantId },
+        update: {},
+      });
+
+      // Calculate points with tier multiplier
+      const multipliers: Record<string, number> = { BRONZE: 1, SILVER: 1.2, GOLD: 1.5, PLATINUM: 2 };
+      const multiplier = multipliers[account.tier] || 1;
+      const points = Math.floor(amount * multiplier);
+
+      await this.prisma.loyaltyAccount.update({
+        where: { id: account.id },
+        data: { points: { increment: points }, totalEarned: { increment: points } },
+      });
+
+      await this.prisma.loyaltyTransaction.create({
+        data: {
+          accountId: account.id,
+          points,
+          type: 'earn',
+          source: appointment.id,
+          note: `Randevu: ${amount}₺ → ${points} puan`,
+        },
+      });
+
+      // Check tier upgrade
+      const newTotal = account.totalEarned + points;
+      let newTier = 'BRONZE';
+      if (newTotal >= 5000) newTier = 'PLATINUM';
+      else if (newTotal >= 2000) newTier = 'GOLD';
+      else if (newTotal >= 500) newTier = 'SILVER';
+
+      if (newTier !== account.tier) {
+        await this.prisma.loyaltyAccount.update({
+          where: { id: account.id },
+          data: { tier: newTier as any },
+        });
+      }
+    } catch {
+      // Loyalty points should never block the payment flow
+    }
+  }
+
+  private async collectCommission(payment: any, appointment: any) {
+    try {
+      // Get subscription to determine commission rate
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { tenantId: payment.tenantId },
+      });
+
+      // Default rates: FREE=5%, PRO=2.5%, BUSINESS=1.5%, ENTERPRISE=0%
+      const commissionRate = subscription?.commissionRate ?? 0.05;
+      if (commissionRate === 0) return;
+
+      const commissionAmount = Number(payment.amount) * commissionRate;
+
+      await this.prisma.platformCommission.create({
+        data: {
+          tenantId: payment.tenantId,
+          appointmentId: payment.appointmentId,
+          paymentId: payment.id,
+          amount: commissionAmount,
+          rate: commissionRate,
+          collectedAt: new Date(),
+        },
+      });
+    } catch {
+      // Commission collection should never block the payment flow
+    }
   }
 
   private async failPayment(paymentId: string) {

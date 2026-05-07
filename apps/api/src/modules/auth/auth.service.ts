@@ -23,7 +23,7 @@ export class AuthService {
     private notifications: NotificationsService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto & { source?: string; deviceToken?: string }) {
     // Check if user exists
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -46,6 +46,8 @@ export class AuthService {
         passwordHash,
         role: dto.role || Role.CUSTOMER,
         tenantId: dto.tenantId || null,
+        registrationSource: dto.source || 'web',
+        deviceTokens: dto.deviceToken ? [dto.deviceToken] : [],
       },
     });
 
@@ -98,6 +100,49 @@ export class AuthService {
     });
 
     // Generate tokens
+    const tokens = await this.generateTokens(user.id, user.email, user.role, user.tenantId);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        tenantId: user.tenantId,
+        avatarUrl: user.avatarUrl,
+      },
+      ...tokens,
+    };
+  }
+
+  async loginCustomer(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('E-posta veya şifre hatalı');
+    }
+
+    if (user.role !== Role.CUSTOMER) {
+      throw new UnauthorizedException('Bu giriş yalnızca müşteriler içindir');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Hesabınız devre dışı bırakılmıştır');
+    }
+
+    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('E-posta veya şifre hatalı');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.tenantId);
 
     return {

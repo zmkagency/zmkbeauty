@@ -24,6 +24,15 @@ import { HealthModule } from './modules/health/health.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ProductsModule } from './modules/products/products.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { LoyaltyModule } from './modules/loyalty/loyalty.module';
+import { PackagesModule } from './modules/packages/packages.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
+import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
+import { MobileModule } from './modules/mobile/mobile.module';
+import { FraudModule } from './modules/fraud/fraud.module';
+import { CrmModule } from './modules/crm/crm.module';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -76,6 +85,15 @@ import { ProductsModule } from './modules/products/products.module';
     CampaignsModule,
     ReviewsModule,
     ProductsModule,
+    SubscriptionsModule,
+    LoyaltyModule,
+    PackagesModule,
+    WaitlistModule,
+    GiftCardsModule,
+    MobileModule,
+    FraudModule,
+    CrmModule,
+    WhatsappModule,
   ],
   providers: [
     // Apply throttling globally. Individual routes can tighten with @Throttle({ auth: {...} })

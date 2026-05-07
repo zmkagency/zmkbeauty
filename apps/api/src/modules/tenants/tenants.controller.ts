@@ -69,6 +69,21 @@ export class TenantsController {
     return this.tenantsService.findBySlug(slug);
   }
 
+  @Get('domain/:domain')
+  @ApiOperation({ summary: 'Mağazayı custom domain ile bul' })
+  async findByDomain(@Param('domain') domain: string) {
+    return this.tenantsService.findByDomain(domain);
+  }
+
+  @Patch(':id/domain')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.SUPERADMIN, Role.STORE_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mağazanın özel domainini güncelle' })
+  async updateDomain(@Param('id') id: string, @Body('domain') domain: string | null) {
+    return this.tenantsService.updateDomain(id, domain);
+  }
+
   @Get('check-slug/:slug')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.SUPERADMIN)

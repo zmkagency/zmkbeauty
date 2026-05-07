@@ -66,6 +66,8 @@ model Tenant {
   seoDescription   String?  @db.Text
   isActive         Boolean  @default(true)
   subscriptionTier String   @default("starter") // starter, pro, enterprise
+  customDomain     String?  @unique
+  domainVerified   Boolean  @default(false)
   bufferMinutes    Int      @default(0) // Buffer between appointments
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -82,6 +84,8 @@ model Tenant {
   campaigns    Campaign[]
   products     Product[]
   equipment    Equipment[]
+  subscription Subscription?
+  fraudLogs    FraudLog[]
 
   @@index([slug])
   @@index([city])
@@ -99,7 +103,12 @@ model User {
   tenantId     String?
   avatarUrl    String?
   isActive     Boolean   @default(true)
+  riskScore    Float     @default(0)
+  isBanned     Boolean   @default(false)
   lastLoginAt  DateTime?
+  registrationSource String?  // web, mobile, admin, import
+  deviceTokens String[]  @default([]) // expo push tokens
+  birthDate    DateTime? @db.Date
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -110,6 +119,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   employee            Employee?
   reviews             Review[]
+  fraudLogs           FraudLog[]
 
   @@index([email])
   @@index([tenantId])
@@ -239,6 +249,7 @@ model Appointment {
   notes      String?           @db.Text
   campaignId String?
   discount   Decimal?          @db.Decimal(10, 2)
+  whatsappMessageId String?
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
 
@@ -332,6 +343,25 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([entity])
+  @@index([createdAt])
+}
+
+model FraudLog {
+  id          String   @id @default(cuid())
+  userId      String
+  tenantId    String?
+  reason      String
+  severity    String   // LOW, MEDIUM, HIGH, CRITICAL
+  actionTaken String?  // BANNED, FLAGGED, NONE
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([tenantId])
   @@index([createdAt])
 }
 
@@ -436,4 +466,240 @@ model AppointmentEquipment {
   equipment   Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 
   @@unique([appointmentId, equipmentId])
+}
+
+// ==========================================
+// SUBSCRIPTION & BILLING
+// ==========================================
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+model Subscription {
+  id                  String             @id @default(cuid())
+  tenantId            String             @unique
+  tier                SubscriptionTier   @default(FREE)
+  status              SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  paytrSubscriptionId String?
+  maxEmployees        Int                @default(1)
+  maxAppointmentsPerMonth Int            @default(50)
+  commissionRate      Float              @default(0.05) // 5% for FREE
+  trialEndsAt         DateTime?
+  cancelledAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  tenantId       String
+  subscriptionId String
+  amount         Decimal  @db.Decimal(10, 2)
+  currency       String   @default("TRY")
+  status         String   @default("pending") // pending, paid, failed, refunded
+  description    String?
+  paytrOrderId   String?  @unique
+  paidAt         DateTime?
+  dueDate        DateTime
+  createdAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model PlatformCommission {
+  id            String    @id @default(cuid())
+  tenantId      String
+  appointmentId String    @unique
+  paymentId     String
+  amount        Decimal   @db.Decimal(10, 2)
+  rate          Float
+  collectedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+// ==========================================
+// LOYALTY & RETENTION
+// ==========================================
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+model LoyaltyAccount {
+  id          String      @id @default(cuid())
+  userId      String
+  tenantId    String
+  points      Int         @default(0)
+  tier        LoyaltyTier @default(BRONZE)
+  totalEarned Int         @default(0)
+  totalSpent  Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  transactions LoyaltyTransaction[]
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@index([tier])
+}
+
+model LoyaltyTransaction {
+  id        String   @id @default(cuid())
+  accountId String
+  points    Int      // positive = earn, negative = redeem
+  type      String   // earn, redeem, expire, bonus, birthday, referral
+  source    String?  // appointment_id, campaign_id, etc.
+  note      String?
+  createdAt DateTime @default(now())
+
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ==========================================
+// PACKAGES & MEMBERSHIPS
+// ==========================================
+
+model Package {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  description  String?  @db.Text
+  serviceId    String
+  sessionCount Int
+  price        Decimal  @db.Decimal(10, 2)
+  currency     String   @default("TRY")
+  validDays    Int      @default(365)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customerPackages CustomerPackage[]
+
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model CustomerPackage {
+  id          String   @id @default(cuid())
+  packageId   String
+  userId      String
+  tenantId    String
+  remaining   Int
+  expiresAt   DateTime
+  purchasedAt DateTime @default(now())
+
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([expiresAt])
+}
+
+// ==========================================
+// GIFT CARDS
+// ==========================================
+
+model GiftCard {
+  id           String    @id @default(cuid())
+  tenantId     String?   // null = platform-wide
+  code         String    @unique
+  amount       Decimal   @db.Decimal(10, 2)
+  balance      Decimal   @db.Decimal(10, 2)
+  currency     String    @default("TRY")
+  purchaserId  String?
+  recipientEmail String?
+  recipientName  String?
+  message      String?
+  isActive     Boolean   @default(true)
+  expiresAt    DateTime?
+  redeemedAt   DateTime?
+  redeemedBy   String?
+  createdAt    DateTime  @default(now())
+
+  @@index([code])
+  @@index([tenantId])
+  @@index([purchaserId])
+}
+
+// ==========================================
+// WAITLIST
+// ==========================================
+
+model Waitlist {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  serviceId  String
+  employeeId String?
+  date       DateTime @db.Date
+  notifiedAt DateTime?
+  bookedAt   DateTime?
+  expiredAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, date])
+  @@index([userId])
+  @@index([notifiedAt])
+}
+
+// ==========================================
+// REFERRALS
+// ==========================================
+
+model Referral {
+  id             String   @id @default(cuid())
+  referrerTenantId String  // salon that referred
+  referredTenantId String  // salon that signed up
+  rewardType     String   @default("free_month") // free_month, discount, points
+  rewardApplied  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([referrerTenantId])
+  @@index([referredTenantId])
+}
+
+model CustomerReferral {
+  id           String   @id @default(cuid())
+  tenantId     String
+  referrerId   String   // user who referred
+  referredId   String   // user who signed up
+  pointsEarned Int      @default(50)
+  rewardApplied Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([referrerId])
 }

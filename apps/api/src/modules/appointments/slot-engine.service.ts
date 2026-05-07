@@ -38,11 +38,10 @@ export class SlotEngineService {
     const endOfDay = new Date(date);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    // 1. Check store closure
-    const closure = await this.prisma.storeClosure.findFirst({
+    // 1. Check store closure (date field is @db.Date, use exact match)
+    const closure = await this.prisma.storeClosure.findUnique({
       where: {
-        tenantId,
-        date: { gte: startOfDay, lte: endOfDay },
+        tenantId_date: { tenantId, date: startOfDay },
       },
     });
     if (closure?.isFullDay) return [];

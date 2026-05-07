@@ -173,6 +173,28 @@ export class TenantsService {
     return tenant;
   }
 
+  async findByDomain(domain: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { customDomain: domain },
+      select: { slug: true },
+    });
+    if (!tenant) throw new NotFoundException('Domain bulunamadı');
+    return tenant;
+  }
+
+  async updateDomain(id: string, domain: string | null) {
+    if (domain) {
+      const existing = await this.prisma.tenant.findFirst({
+        where: { customDomain: domain, id: { not: id } },
+      });
+      if (existing) throw new ConflictException('Bu domain zaten başka bir mağaza tarafından kullanılıyor');
+    }
+    return this.prisma.tenant.update({
+      where: { id },
+      data: { customDomain: domain, domainVerified: false },
+    });
+  }
+
   async update(id: string, dto: UpdateTenantDto) {
     await this.findById(id); // Check existence
 
