@@ -77,7 +77,7 @@ export default function AdminSubscriptionPage() {
 
   const handleUpgrade = async (tier: string) => {
     if (tier === "ENTERPRISE") {
-      toast("Kurumsal plan için lütfen bizimle iletişime geçin.");
+      toast("Kurumsal plan için lütfen bizimle +90 541 381 2114 numarasından iletişime geçin.");
       return;
     }
     setUpgrading(true);

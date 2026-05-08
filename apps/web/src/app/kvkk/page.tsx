@@ -100,7 +100,8 @@ export default function KVKKPage() {
             <p className="text-sm text-gray-600">
               <strong>Veri Sorumlusu:</strong> ZMK Yazılım ve Teknoloji<br />
               <strong>Adres:</strong> Kırıkkale, Türkiye<br />
-              <strong>E-posta:</strong> kvkk@zmkbeauty.com
+              <strong>E-posta:</strong> kvkk@zmkbeauty.com<br />
+              <strong>Telefon:</strong> +90 541 381 2114
             </p>
           </div>
         </div>

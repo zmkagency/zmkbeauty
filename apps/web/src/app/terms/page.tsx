@@ -86,7 +86,7 @@ export default function TermsPage() {
 
           <h2>9. İletişim</h2>
           <p>
-            Kullanım koşulları hakkında sorularınız için <strong>info@zmkbeauty.com</strong> adresinden iletişime geçebilirsiniz.
+            Kullanım koşulları hakkında sorularınız için <strong>info@zmkbeauty.com</strong> adresinden veya <strong>+90 541 381 2114</strong> numaralı telefondan iletişime geçebilirsiniz.
           </p>
 
           <div className="mt-8 p-4 rounded-xl bg-gray-50 border border-gray-200">

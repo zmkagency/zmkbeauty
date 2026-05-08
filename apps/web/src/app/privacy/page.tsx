@@ -84,7 +84,7 @@ export default function PrivacyPage() {
 
           <h2>8. İletişim</h2>
           <p>
-            Gizlilik ile ilgili sorularınız için <strong>info@zmkbeauty.com</strong> adresinden bizimle iletişime geçebilirsiniz.
+            Gizlilik ile ilgili sorularınız için <strong>info@zmkbeauty.com</strong> adresinden veya <strong>+90 541 381 2114</strong> numaralı telefondan bizimle iletişime geçebilirsiniz.
           </p>
         </div>
       </div>
